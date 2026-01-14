@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text; // POTRZEBNE do StringBuilder
 using NAudio.Wave;
 
 namespace AudioProApp;
@@ -9,24 +10,21 @@ public partial class Form1 : Form
     [DllImport("winmm.dll", CharSet = CharSet.Auto)]
     static extern bool PlaySound(string pszSound, IntPtr hmod, uint fdwSound);
 
-    private dynamic wmp; // ActiveX
-    private IWavePlayer waveOut = new WaveOutEvent(); // NAudio
+    private dynamic wmp; 
+    private IWavePlayer waveOut = new WaveOutEvent();
     private AudioFileReader audioReader;
 
-    // PLIKI (szukaj w folderze obok kodu)
     private string wav = "test.wav";
     private string mp3 = "test.mp3";
 
-    // UI - Pole tekstowe na pełny nagłówek
     private TextBox txtHeaderInfo;
 
     public Form1()
     {
-        this.Text = "Zaawansowany Odtwarzacz .NET 10";
-        this.Size = new Size(600, 750); // Większe okno
+        this.Text = "Odtwarzacz Audio .NET 10";
+        this.Size = new Size(600, 750);
         this.StartPosition = FormStartPosition.CenterScreen;
 
-        // Start ActiveX
         try { wmp = Activator.CreateInstance(Type.GetTypeFromProgID("WMPlayer.OCX.7")); } catch { }
 
         BudujInterfejs();
@@ -42,94 +40,92 @@ public partial class Form1 : Form
         b1.Click += (s, e) => PlaySound(wav, IntPtr.Zero, 0x0001 | 0x0002);
 
         Button b2 = DodajPrzycisk("STOP (Null)", startY + 30, 150);
-        b2.Click += (s, e) => PlaySound(null, IntPtr.Zero, 0); // Zatrzymanie przez NULL
+        b2.Click += (s, e) => PlaySound(null, IntPtr.Zero, 0);
 
-        // --- RZĄD 2: NAGŁÓWEK WAV (Pełny) ---
+        // --- RZĄD 2: NAGŁÓWEK WAV ---
         startY += 100;
-        DodajNapis("2. Pełny Nagłówek i Dane Pliku WAV", startY);
+        DodajNapis("2. Nagłówek i Dane Pliku WAV", startY);
         
         txtHeaderInfo = new TextBox { 
             Top = startY + 30, Left = 20, Width = 540, Height = 180, 
             Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
-            Font = new Font("Consolas", 9) // Czcionka programistyczna - czytelniejsza
+            Font = new Font("Consolas", 10)
         };
         this.Controls.Add(txtHeaderInfo);
 
         Button bInfo = DodajPrzycisk("Pobierz Pełne Info", startY + 220, 20);
-        bInfo.Width = 230;
+        bInfo.Width = 250;
         bInfo.Click += (s, e) => PokazPelnyNaglowek();
 
         // --- RZĄD 3: ActiveX ---
         startY += 280;
-        DodajNapis("3. ActiveX (Media Player - Szybkość)", startY);
+        DodajNapis("3. ActiveX (Media Player)", startY);
         Button b3 = DodajPrzycisk("Graj MP3", startY + 30, 20);
-        b3.Click += (s, e) => { wmp.URL = mp3; wmp.controls.play(); };
+        b3.Click += (s, e) => { if(wmp != null) { wmp.URL = mp3; wmp.controls.play(); } };
 
         Button b4 = DodajPrzycisk("Szybko 2.0x", startY + 30, 150);
-        b4.Click += (s, e) => wmp.settings.rate = 2.0;
+        b4.Click += (s, e) => { if(wmp != null) wmp.settings.rate = 2.0; };
 
-        // --- RZĄD 4: NAudio (Pauza/Wznowienie) ---
+        // --- RZĄD 4: NAudio ---
         startY += 100;
-        DodajNapis("4. NAudio (Zapamiętywanie pozycji)", startY);
+        DodajNapis("4. NAudio (Wznowienie po Pauzie)", startY);
         
         Button bPlay = DodajPrzycisk("START / WZNÓW", startY + 30, 20);
         bPlay.Click += (s, e) => {
-            if (audioReader == null) {
-                audioReader = new AudioFileReader(mp3);
-                waveOut.Init(audioReader);
-            }
-            waveOut.Play(); // Jeśli było zapauzowane, ruszy od tego samego momentu
+            try {
+                if (audioReader == null) {
+                    audioReader = new AudioFileReader(mp3);
+                    waveOut.Init(audioReader);
+                }
+                waveOut.Play();
+            } catch (Exception ex) { MessageBox.Show("Błąd NAudio: " + ex.Message); }
         };
 
         Button bPause = DodajPrzycisk("PAUZA", startY + 30, 150);
-        bPause.Click += (s, e) => waveOut.Pause(); // Stopuje, ale nie kasuje pozycji
+        bPause.Click += (s, e) => waveOut.Pause();
 
         Button bReset = DodajPrzycisk("RESTART", startY + 30, 280);
         bReset.Click += (s, e) => {
             waveOut.Stop();
-            if (audioReader != null) audioReader.Position = 0; // Przewiń na start
+            if (audioReader != null) audioReader.Position = 0;
         };
     }
 
     private void PokazPelnyNaglowek()
     {
+        if (!File.Exists(wav)) {
+            txtHeaderInfo.Text = "BŁĄD: Brak pliku test.wav w folderze!";
+            return;
+        }
+
         try {
             using (var reader = new WaveFileReader(wav)) {
-                var f = reader.WaveFormat;
-                var info = new System.Text.StringBuilder();
-                info.AppendLine($"--- NAGŁÓWEK GŁÓWNY (fmt) ---");
-                info.AppendLine($"Kodowanie: {f.Encoding}");
-                info.AppendLine($"Kanały: {f.Channels}");
-                info.AppendLine($"Próbkowanie: {f.SampleRate} Hz");
-                info.AppendLine($"Bity na próbkę: {f.BitsPerSample} bit");
-                info.AppendLine($"Bajtów na sekundę: {f.AverageBytesPerSecond}");
-                info.AppendLine($"Wyrównanie bloku: {f.BlockAlign}");
-                info.AppendLine("");
-                info.AppendLine($"--- DANE PLIKU ---");
-                info.AppendLine($"Czas trwania: {reader.TotalTime}");
-                info.AppendLine($"Długość w bajtach: {reader.Length} bytes");
+                var format = reader.WaveFormat;
+                var sb = new StringBuilder();
                 
-                // Dodatkowe metadane (Extra Chunks) jeśli istnieją
-                if (reader.ExtraChunks.Count > 0) {
-                    info.AppendLine("");
-                    info.AppendLine($"--- DODATKOWE SEKCJE (Chunks) ---");
-                    foreach(var chunk in reader.ExtraChunks)
-                        info.AppendLine($"Chunk ID: {chunk.IdentifierAsString} | Rozmiar: {chunk.ChunkLength}");
-                }
-
-                txtHeaderInfo.Text = info.ToString();
+                sb.AppendLine("=== PARAMETRY TECHNICZNE ===");
+                sb.AppendLine($"Format: {format.Encoding}");
+                sb.AppendLine($"Kanały: {format.Channels}");
+                sb.AppendLine($"Częstotliwość: {format.SampleRate} Hz");
+                sb.AppendLine($"Bity na próbkę: {format.BitsPerSample} bit");
+                sb.AppendLine($"Bajtów na sekundę: {format.AverageBytesPerSecond}");
+                sb.AppendLine("");
+                sb.AppendLine("=== INFORMACJE O PLIKU ===");
+                sb.AppendLine($"Czas trwania: {reader.TotalTime}");
+                sb.AppendLine($"Długość w bajtach: {reader.Length}");
+                
+                txtHeaderInfo.Text = sb.ToString();
             }
-        } catch {
-            txtHeaderInfo.Text = "BŁĄD: Nie można odczytać pliku test.wav.\nUpewnij się, że plik jest w folderze projektu.";
+        } catch (Exception ex) {
+            txtHeaderInfo.Text = "Błąd odczytu: " + ex.Message;
         }
     }
 
-    // Pomocnik: Przycisk z wysokością minimum 40
     private Button DodajPrzycisk(string tekst, int gora, int lewo) {
         Button b = new Button { 
             Text = tekst, Top = gora, Left = lewo, 
-            Width = 120, Height = 45, // Zwiększona wysokość
-            BackColor = Color.LightGray,
+            Width = 120, Height = 45, 
+            BackColor = Color.FromArgb(240, 240, 240),
             FlatStyle = FlatStyle.Flat
         };
         this.Controls.Add(b);
