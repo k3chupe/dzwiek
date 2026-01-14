@@ -1,34 +1,42 @@
 using System.Runtime.InteropServices;
+using System.IO; // Potrzebne do obsługi ścieżek Path
 using NAudio.Wave;
-using WMPLib;
 
 namespace AudioProApp;
 
 public partial class Form1 : Form
 {
-    // --- SILNIKI ODTWARZANIA ---
-
-    private readonly string _wavPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "test.wav");
-    private readonly string _mp3Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "test.mp3");
-
-    
-    // 1. PlaySound (WinAPI)
+    // --- 1. PlaySound (WinAPI) ---
     [DllImport("winmm.dll", CharSet = CharSet.Auto)]
     static extern bool PlaySound(string? pszSound, IntPtr hmod, uint fdwSound);
 
-    // 2. ActiveX (WMP)
-    WindowsMediaPlayer wmp = new WindowsMediaPlayer();
+    // --- 2. ActiveX (Windows Media Player) ---
+    // Zmieniamy typ na 'dynamic', żeby kompilator nie szukał biblioteki WMPLib
+    private dynamic? wmp; 
 
-    // 3. NAudio
-    IWavePlayer waveOut = new WaveOutEvent();
-    AudioFileReader? audioReader;
+    // --- 3. NAudio ---
+    private IWavePlayer waveOut = new WaveOutEvent();
+    private AudioFileReader? audioReader;
+
+    // Ścieżki do plików (szuka ich w folderze z programem)
+    private readonly string _wavPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "test.wav");
+    private readonly string _mp3Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "test.mp3");
 
     public Form1()
     {
-        // Ustawienia okna
-        this.Text = "Multi-Audio Player .NET 10";
+        this.Text = "Odtwarzacz Audio .NET 10";
         this.Size = new Size(500, 450);
-        this.Font = new Font("Segoe UI", 10);
+        this.StartPosition = FormStartPosition.CenterScreen;
+
+        // Inicjalizacja ActiveX bez użycia bibliotek (tzw. Late Binding)
+        try {
+            Type? type = Type.GetTypeFromProgID("WMPlayer.OCX.7");
+            if (type != null) {
+                wmp = Activator.CreateInstance(type);
+            }
+        } catch {
+            // Jeśli ktoś nie ma zainstalowanego WMP w systemie
+        }
 
         InitializeLayout();
     }
@@ -37,64 +45,57 @@ public partial class Form1 : Form
     {
         int startY = 20;
 
-        // --- RZĄD 1: PlaySound (Najprostszy) ---
-        AddLabel("Model 1: PlaySound (Tylko WAV)", startY);
+        // --- RZĄD 1: PlaySound ---
+        AddLabel("Model 1: PlaySound (Systemowy WinAPI)", startY);
         Button btnPlaySound = CreateButton("Graj WAV", startY + 30, 20);
-        btnPlaySound.Click += (s, e) => PlaySound(_wavPath, IntPtr.Zero, 0x0001 | 0x0002);
-        
-        Button btnStopSound = CreateButton("Stop", startY + 30, 130);
-        btnStopSound.Click += (s, e) => PlaySound(null, IntPtr.Zero, 0);
+        btnPlaySound.Click += (s, e) => {
+            if (File.Exists(_wavPath)) PlaySound(_wavPath, IntPtr.Zero, 0x0001 | 0x0002);
+            else MessageBox.Show("Nie znaleziono pliku test.wav");
+        };
 
-        // --- RZĄD 2: ActiveX (WMP - Średniozaawansowany) ---
+        // --- RZĄD 2: ActiveX (Dynamiczny) ---
         startY += 100;
-        AddLabel("Model 2: ActiveX (MP3, Szybkość)", startY);
+        AddLabel("Model 2: ActiveX (WMP - dynamic)", startY);
         Button btnWmpPlay = CreateButton("Graj MP3", startY + 30, 20);
         btnWmpPlay.Click += (s, e) => {
-            wmp.URL = _mp3Path;
-            wmp.controls.play();
+            if (wmp != null && File.Exists(_mp3Path)) {
+                wmp.URL = _mp3Path;
+                wmp.controls.play();
+            } else MessageBox.Show("Problem z ActiveX lub brakiem pliku test.mp3");
         };
 
-        Button btnWmpSlow = CreateButton("Wolno (0.5x)", startY + 30, 130);
-        btnWmpSlow.Click += (s, e) => wmp.settings.rate = 0.5;
+        Button btnWmpSlow = CreateButton("Wolniej (0.5x)", startY + 30, 130);
+        btnWmpSlow.Click += (s, e) => { if (wmp != null) wmp.settings.rate = 0.5; };
 
-        Button btnWmpFast = CreateButton("Szybko (2.0x)", startY + 30, 240);
-        btnWmpFast.Click += (s, e) => wmp.settings.rate = 2.0;
+        Button btnWmpFast = CreateButton("Szybciej (2.0x)", startY + 30, 240);
+        btnWmpFast.Click += (s, e) => { if (wmp != null) wmp.settings.rate = 2.0; };
 
-        Button btnWmpStop = CreateButton("Stop", startY + 30, 350);
-        btnWmpStop.Click += (s, e) => wmp.controls.stop();
-
-        // --- RZĄD 3: NAudio (Nowoczesny - Pełna kontrola) ---
+        // --- RZĄD 3: NAudio ---
         startY += 100;
-        AddLabel("Model 3: NAudio (Strumieniowanie)", startY);
+        AddLabel("Model 3: NAudio (Biblioteka NuGet)", startY);
         Button btnNaudioPlay = CreateButton("Graj MP3", startY + 30, 20);
         btnNaudioPlay.Click += (s, e) => {
-            if (audioReader != null) audioReader.Dispose();
-            audioReader = new AudioFileReader(@"C:\test.mp3");
-            waveOut.Init(audioReader);
-            waveOut.Play();
+            if (File.Exists(_mp3Path)) {
+                if (audioReader != null) audioReader.Dispose();
+                audioReader = new AudioFileReader(_mp3Path);
+                waveOut.Init(audioReader);
+                waveOut.Play();
+            }
         };
 
-        Button btnNaudioPause = CreateButton("Pauza", startY + 30, 130);
-        btnNaudioPause.Click += (s, e) => waveOut.Pause();
-
-        TrackBar volSlider = new TrackBar { Left = 240, Top = startY + 30, Width = 150, Minimum = 0, Maximum = 100, Value = 50 };
-        volSlider.Scroll += (s, e) => { if (audioReader != null) audioReader.Volume = volSlider.Value / 100f; };
-        this.Controls.Add(volSlider);
-        AddLabel("Głośność", startY + 60, 280, 8);
+        Button btnNaudioStop = CreateButton("Stop", startY + 30, 130);
+        btnNaudioStop.Click += (s, e) => waveOut.Stop();
     }
 
-    // --- POMOCNICZE METODY DO UI ---
-
-    private Button CreateButton(string text, int top, int left)
-    {
+    // Funkcje pomocnicze do budowy okna
+    private Button CreateButton(string text, int top, int left) {
         Button btn = new Button { Text = text, Top = top, Left = left, Width = 100, Height = 35 };
         this.Controls.Add(btn);
         return btn;
     }
 
-    private void AddLabel(string text, int top, int left = 20, int size = 10)
-    {
-        Label lbl = new Label { Text = text, Top = top, Left = left, AutoSize = true, Font = new Font("Segoe UI", size, FontStyle.Bold) };
+    private void AddLabel(string text, int top) {
+        Label lbl = new Label { Text = text, Top = top, Left = 20, AutoSize = true, Font = new Font("Segoe UI", 10, FontStyle.Bold) };
         this.Controls.Add(lbl);
     }
 }
