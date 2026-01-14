@@ -1,67 +1,96 @@
-using System;
-using System.Runtime.InteropServices; // Do PlaySound
-using System.Windows.Forms;
-using WMPLib;      // Do ActiveX
-using NAudio.Wave; // Do NAudio
+using System.Runtime.InteropServices;
+using NAudio.Wave;
+using WMPLib;
 
-namespace AudioTest
+namespace AudioProApp;
+
+public partial class Form1 : Form
 {
-    public partial class Form1 : Form
+    // --- SILNIKI ODTWARZANIA ---
+    
+    // 1. PlaySound (WinAPI)
+    [DllImport("winmm.dll", CharSet = CharSet.Auto)]
+    static extern bool PlaySound(string? pszSound, IntPtr hmod, uint fdwSound);
+
+    // 2. ActiveX (WMP)
+    WindowsMediaPlayer wmp = new WindowsMediaPlayer();
+
+    // 3. NAudio
+    IWavePlayer waveOut = new WaveOutEvent();
+    AudioFileReader? audioReader;
+
+    public Form1()
     {
-        // Model 1: PlaySound (WinAPI)
-        [DllImport("winmm.dll")]
-        static extern bool PlaySound(string pszSound, IntPtr hmod, uint fdwSound);
+        // Ustawienia okna
+        this.Text = "Multi-Audio Player .NET 10";
+        this.Size = new Size(500, 450);
+        this.Font = new Font("Segoe UI", 10);
 
-        // Model 2: ActiveX
-        WindowsMediaPlayer wmp = new WindowsMediaPlayer();
+        InitializeLayout();
+    }
 
-        // Model 3: NAudio
-        WaveOutEvent waveOut = new WaveOutEvent();
-        AudioFileReader reader;
+    private void InitializeLayout()
+    {
+        int startY = 20;
 
-        public Form1()
-        {
-            InitializeComponent();
-            // Ustawienia suwaka prędkości (od 0.5x do 2.0x)
-            trackSpeed.Minimum = 5;
-            trackSpeed.Maximum = 20;
-            trackSpeed.Value = 10;
-        }
+        // --- RZĄD 1: PlaySound (Najprostszy) ---
+        AddLabel("Model 1: PlaySound (Tylko WAV)", startY);
+        Button btnPlaySound = CreateButton("Graj WAV", startY + 30, 20);
+        btnPlaySound.Click += (s, e) => PlaySound(@"C:\test.wav", IntPtr.Zero, 0x0001 | 0x0002);
+        
+        Button btnStopSound = CreateButton("Stop", startY + 30, 130);
+        btnStopSound.Click += (s, e) => PlaySound(null, IntPtr.Zero, 0);
 
-        // --- OBSŁUGA PRZYCISKÓW ---
-
-        private void btnPlaySound_Click(object sender, EventArgs e)
-        {
-            // PlaySound jest prymitywny - tylko pliki .wav
-            PlaySound(@"C:\test.wav", IntPtr.Zero, 0x0001); 
-        }
-
-        private void btnActiveX_Click(object sender, EventArgs e)
-        {
+        // --- RZĄD 2: ActiveX (WMP - Średniozaawansowany) ---
+        startY += 100;
+        AddLabel("Model 2: ActiveX (MP3, Szybkość)", startY);
+        Button btnWmpPlay = CreateButton("Graj MP3", startY + 30, 20);
+        btnWmpPlay.Click += (s, e) => {
             wmp.URL = @"C:\test.mp3";
-            wmp.settings.rate = trackSpeed.Value / 10.0; // Prędkość z suwaka
             wmp.controls.play();
-        }
+        };
 
-        private void btnNAudio_Click(object sender, EventArgs e)
-        {
-            if (reader != null) reader.Dispose();
-            reader = new AudioFileReader(@"C:\test.mp3");
-            waveOut.Init(reader);
+        Button btnWmpSlow = CreateButton("Wolno (0.5x)", startY + 30, 130);
+        btnWmpSlow.Click += (s, e) => wmp.settings.rate = 0.5;
+
+        Button btnWmpFast = CreateButton("Szybko (2.0x)", startY + 30, 240);
+        btnWmpFast.Click += (s, e) => wmp.settings.rate = 2.0;
+
+        Button btnWmpStop = CreateButton("Stop", startY + 30, 350);
+        btnWmpStop.Click += (s, e) => wmp.controls.stop();
+
+        // --- RZĄD 3: NAudio (Nowoczesny - Pełna kontrola) ---
+        startY += 100;
+        AddLabel("Model 3: NAudio (Strumieniowanie)", startY);
+        Button btnNaudioPlay = CreateButton("Graj MP3", startY + 30, 20);
+        btnNaudioPlay.Click += (s, e) => {
+            if (audioReader != null) audioReader.Dispose();
+            audioReader = new AudioFileReader(@"C:\test.mp3");
+            waveOut.Init(audioReader);
             waveOut.Play();
-        }
+        };
 
-        private void btnStop_Click(object sender, EventArgs e)
-        {
-            wmp.controls.stop();
-            waveOut.Stop();
-            PlaySound(null, IntPtr.Zero, 0); // Zatrzymuje PlaySound
-        }
+        Button btnNaudioPause = CreateButton("Pauza", startY + 30, 130);
+        btnNaudioPause.Click += (s, e) => waveOut.Pause();
 
-        private void trackSpeed_Scroll(object sender, EventArgs e)
-        {
-            // Zmiana prędkości w locie dla ActiveX
-            wmp.settings.rate = trackSpeed.Value / 10.0;
-        }
+        TrackBar volSlider = new TrackBar { Left = 240, Top = startY + 30, Width = 150, Minimum = 0, Maximum = 100, Value = 50 };
+        volSlider.Scroll += (s, e) => { if (audioReader != null) audioReader.Volume = volSlider.Value / 100f; };
+        this.Controls.Add(volSlider);
+        AddLabel("Głośność", startY + 60, 280, 8);
+    }
+
+    // --- POMOCNICZE METODY DO UI ---
+
+    private Button CreateButton(string text, int top, int left)
+    {
+        Button btn = new Button { Text = text, Top = top, Left = left, Width = 100, Height = 35 };
+        this.Controls.Add(btn);
+        return btn;
+    }
+
+    private void AddLabel(string text, int top, int left = 20, int size = 10)
+    {
+        Label lbl = new Label { Text = text, Top = top, Left = left, AutoSize = true, Font = new Font("Segoe UI", size, FontStyle.Bold) };
+        this.Controls.Add(lbl);
     }
 }
