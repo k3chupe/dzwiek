@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
-using System.IO; // Potrzebne do obsługi ścieżek Path
-using NAudio.Wave;
+using NAudio.Wave; // Do czytania nagłówka i odtwarzania
 
 namespace AudioProApp;
 
@@ -8,94 +7,111 @@ public partial class Form1 : Form
 {
     // --- 1. PlaySound (WinAPI) ---
     [DllImport("winmm.dll", CharSet = CharSet.Auto)]
-    static extern bool PlaySound(string? pszSound, IntPtr hmod, uint fdwSound);
+    static extern bool PlaySound(string pszSound, IntPtr hmod, uint fdwSound);
 
-    // --- 2. ActiveX (Windows Media Player) ---
-    // Zmieniamy typ na 'dynamic', żeby kompilator nie szukał biblioteki WMPLib
-    private dynamic? wmp; 
+    // --- 2. ActiveX ---
+    private dynamic wmp; 
 
     // --- 3. NAudio ---
     private IWavePlayer waveOut = new WaveOutEvent();
-    private AudioFileReader? audioReader;
+    private AudioFileReader audioReader;
 
-    // Ścieżki do plików (szuka ich w folderze z programem)
-    private readonly string _wavPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "test.wav");
-    private readonly string _mp3Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "test.mp3");
+    // Pliki w folderze projektu
+    private string wav = "test.wav";
+    private string mp3 = "test.mp3";
+
+    // Etykieta do wyświetlania nagłówka
+    private Label lblWavInfo;
 
     public Form1()
     {
-        this.Text = "Odtwarzacz Audio .NET 10";
-        this.Size = new Size(500, 450);
-        this.StartPosition = FormStartPosition.CenterScreen;
+        this.Text = "Odtwarzacz Pro .NET 10";
+        this.Size = new Size(500, 500);
 
-        // Inicjalizacja ActiveX bez użycia bibliotek (tzw. Late Binding)
         try {
-            Type? type = Type.GetTypeFromProgID("WMPlayer.OCX.7");
-            if (type != null) {
-                wmp = Activator.CreateInstance(type);
-            }
-        } catch {
-            // Jeśli ktoś nie ma zainstalowanego WMP w systemie
-        }
+            wmp = Activator.CreateInstance(Type.GetTypeFromProgID("WMPlayer.OCX.7"));
+        } catch { }
 
-        InitializeLayout();
+        InicjalizujUI();
     }
 
-    private void InitializeLayout()
+    private void InicjalizujUI()
     {
         int startY = 20;
 
         // --- RZĄD 1: PlaySound ---
-        AddLabel("Model 1: PlaySound (Systemowy WinAPI)", startY);
-        Button btnPlaySound = CreateButton("Graj WAV", startY + 30, 20);
-        btnPlaySound.Click += (s, e) => {
-            if (File.Exists(_wavPath)) PlaySound(_wavPath, IntPtr.Zero, 0x0001 | 0x0002);
-            else MessageBox.Show("Nie znaleziono pliku test.wav");
-        };
+        DodajNapis("1. PlaySound (WinAPI)", startY);
+        Button b1 = DodajPrzycisk("Graj WAV", startY + 30, 20);
+        b1.Click += (s, e) => PlaySound(wav, IntPtr.Zero, 0x0001 | 0x0002);
 
-        // --- RZĄD 2: ActiveX (Dynamiczny) ---
-        startY += 100;
-        AddLabel("Model 2: ActiveX (WMP - dynamic)", startY);
-        Button btnWmpPlay = CreateButton("Graj MP3", startY + 30, 20);
-        btnWmpPlay.Click += (s, e) => {
-            if (wmp != null && File.Exists(_mp3Path)) {
-                wmp.URL = _mp3Path;
-                wmp.controls.play();
-            } else MessageBox.Show("Problem z ActiveX lub brakiem pliku test.mp3");
-        };
+        Button b2 = DodajPrzycisk("Stop (Null)", startY + 30, 130);
+        b2.Click += (s, e) => PlaySound(null, IntPtr.Zero, 0); // Zatrzymanie przez NULL
 
-        Button btnWmpSlow = CreateButton("Wolniej (0.5x)", startY + 30, 130);
-        btnWmpSlow.Click += (s, e) => { if (wmp != null) wmp.settings.rate = 0.5; };
+        // --- RZĄD 2: Nagłówek WAV ---
+        startY += 90;
+        DodajNapis("2. Nagłówek pliku WAV", startY);
+        lblWavInfo = new Label { Text = "Kliknij, aby sprawdzić info...", Top = startY + 30, Left = 20, Width = 400 };
+        this.Controls.Add(lblWavInfo);
+        
+        Button bInfo = DodajPrzycisk("Pokaż Info", startY + 55, 20);
+        bInfo.Click += (s, e) => PokazNaglowekWav();
 
-        Button btnWmpFast = CreateButton("Szybciej (2.0x)", startY + 30, 240);
-        btnWmpFast.Click += (s, e) => { if (wmp != null) wmp.settings.rate = 2.0; };
+        // --- RZĄD 3: ActiveX ---
+        startY += 110;
+        DodajNapis("3. ActiveX (Szybkość)", startY);
+        Button b3 = DodajPrzycisk("Graj MP3", startY + 30, 20);
+        b3.Click += (s, e) => { wmp.URL = mp3; wmp.controls.play(); };
+        
+        Button b4 = DodajPrzycisk("Szybko (2x)", startY + 30, 130);
+        b4.Click += (s, e) => wmp.settings.rate = 2.0;
 
-        // --- RZĄD 3: NAudio ---
-        startY += 100;
-        AddLabel("Model 3: NAudio (Biblioteka NuGet)", startY);
-        Button btnNaudioPlay = CreateButton("Graj MP3", startY + 30, 20);
-        btnNaudioPlay.Click += (s, e) => {
-            if (File.Exists(_mp3Path)) {
-                if (audioReader != null) audioReader.Dispose();
-                audioReader = new AudioFileReader(_mp3Path);
+        // --- RZĄD 4: NAudio (Pauza i Wznowienie) ---
+        startY += 90;
+        DodajNapis("4. NAudio (Start / Pauza / Resume)", startY);
+        
+        Button bStart = DodajPrzycisk("Start / Play", startY + 30, 20);
+        bStart.Click += (s, e) => {
+            // Jeśli czytnik nie istnieje, stwórz go
+            if (audioReader == null) {
+                audioReader = new AudioFileReader(mp3);
                 waveOut.Init(audioReader);
-                waveOut.Play();
             }
+            waveOut.Play(); // Play działa też jako Resume po pauzie
         };
 
-        Button btnNaudioStop = CreateButton("Stop", startY + 30, 130);
-        btnNaudioStop.Click += (s, e) => waveOut.Stop();
+        Button bPause = DodajPrzycisk("Pauza", startY + 30, 130);
+        bPause.Click += (s, e) => waveOut.Pause(); // Zatrzymuje, ale pamięta pozycję
+
+        Button bReset = DodajPrzycisk("Reset", startY + 30, 240);
+        bReset.Click += (s, e) => {
+            waveOut.Stop();
+            if (audioReader != null) audioReader.Position = 0; // Przewija na początek
+        };
     }
 
-    // Funkcje pomocnicze do budowy okna
-    private Button CreateButton(string text, int top, int left) {
-        Button btn = new Button { Text = text, Top = top, Left = left, Width = 100, Height = 35 };
-        this.Controls.Add(btn);
-        return btn;
+    private void PokazNaglowekWav()
+    {
+        try {
+            // Używamy NAudio do podejrzenia parametrów pliku
+            using (var reader = new WaveFileReader(wav)) {
+                var f = reader.WaveFormat;
+                lblWavInfo.Text = $"Format: {f.Encoding} | {f.SampleRate}Hz | {f.BitsPerSample}bit | Kanały: {f.Channels}";
+                lblWavInfo.ForeColor = Color.Blue;
+            }
+        } catch (Exception ex) {
+            lblWavInfo.Text = "Błąd: Nie znaleziono pliku test.wav";
+            lblWavInfo.ForeColor = Color.Red;
+        }
     }
 
-    private void AddLabel(string text, int top) {
-        Label lbl = new Label { Text = text, Top = top, Left = 20, AutoSize = true, Font = new Font("Segoe UI", 10, FontStyle.Bold) };
-        this.Controls.Add(lbl);
+    private Button DodajPrzycisk(string tekst, int gora, int lewo) {
+        Button b = new Button { Text = tekst, Top = gora, Left = lewo, Width = 100, Height = 35 };
+        this.Controls.Add(b);
+        return b;
+    }
+
+    private void DodajNapis(string tekst, int gora) {
+        Label l = new Label { Text = tekst, Top = gora, Left = 20, AutoSize = true, Font = new Font("Arial", 9, FontStyle.Bold) };
+        this.Controls.Add(l);
     }
 }
