@@ -7,6 +7,10 @@ namespace AudioProApp;
 public partial class Form1 : Form
 {
     // --- SILNIKI ODTWARZANIA ---
+
+    private readonly string _wavPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "test.wav");
+    private readonly string _mp3Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "test.mp3");
+
     
     // 1. PlaySound (WinAPI)
     [DllImport("winmm.dll", CharSet = CharSet.Auto)]
@@ -36,7 +40,7 @@ public partial class Form1 : Form
         // --- RZĄD 1: PlaySound (Najprostszy) ---
         AddLabel("Model 1: PlaySound (Tylko WAV)", startY);
         Button btnPlaySound = CreateButton("Graj WAV", startY + 30, 20);
-        btnPlaySound.Click += (s, e) => PlaySound(@"C:\test.wav", IntPtr.Zero, 0x0001 | 0x0002);
+        btnPlaySound.Click += (s, e) => PlaySound(_wavPath, IntPtr.Zero, 0x0001 | 0x0002);
         
         Button btnStopSound = CreateButton("Stop", startY + 30, 130);
         btnStopSound.Click += (s, e) => PlaySound(null, IntPtr.Zero, 0);
@@ -46,7 +50,7 @@ public partial class Form1 : Form
         AddLabel("Model 2: ActiveX (MP3, Szybkość)", startY);
         Button btnWmpPlay = CreateButton("Graj MP3", startY + 30, 20);
         btnWmpPlay.Click += (s, e) => {
-            wmp.URL = @"C:\test.mp3";
+            wmp.URL = _mp3Path;
             wmp.controls.play();
         };
 
