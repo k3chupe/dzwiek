@@ -1,41 +1,38 @@
 using System.Runtime.InteropServices;
-using NAudio.Wave; // Do czytania nagłówka i odtwarzania
+using NAudio.Wave;
 
 namespace AudioProApp;
 
 public partial class Form1 : Form
 {
-    // --- 1. PlaySound (WinAPI) ---
+    // --- SILNIKI ---
     [DllImport("winmm.dll", CharSet = CharSet.Auto)]
     static extern bool PlaySound(string pszSound, IntPtr hmod, uint fdwSound);
 
-    // --- 2. ActiveX ---
-    private dynamic wmp; 
-
-    // --- 3. NAudio ---
-    private IWavePlayer waveOut = new WaveOutEvent();
+    private dynamic wmp; // ActiveX
+    private IWavePlayer waveOut = new WaveOutEvent(); // NAudio
     private AudioFileReader audioReader;
 
-    // Pliki w folderze projektu
+    // PLIKI (szukaj w folderze obok kodu)
     private string wav = "test.wav";
     private string mp3 = "test.mp3";
 
-    // Etykieta do wyświetlania nagłówka
-    private Label lblWavInfo;
+    // UI - Pole tekstowe na pełny nagłówek
+    private TextBox txtHeaderInfo;
 
     public Form1()
     {
-        this.Text = "Odtwarzacz Pro .NET 10";
-        this.Size = new Size(500, 500);
+        this.Text = "Zaawansowany Odtwarzacz .NET 10";
+        this.Size = new Size(600, 750); // Większe okno
+        this.StartPosition = FormStartPosition.CenterScreen;
 
-        try {
-            wmp = Activator.CreateInstance(Type.GetTypeFromProgID("WMPlayer.OCX.7"));
-        } catch { }
+        // Start ActiveX
+        try { wmp = Activator.CreateInstance(Type.GetTypeFromProgID("WMPlayer.OCX.7")); } catch { }
 
-        InicjalizujUI();
+        BudujInterfejs();
     }
 
-    private void InicjalizujUI()
+    private void BudujInterfejs()
     {
         int startY = 20;
 
@@ -44,74 +41,103 @@ public partial class Form1 : Form
         Button b1 = DodajPrzycisk("Graj WAV", startY + 30, 20);
         b1.Click += (s, e) => PlaySound(wav, IntPtr.Zero, 0x0001 | 0x0002);
 
-        Button b2 = DodajPrzycisk("Stop (Null)", startY + 30, 130);
+        Button b2 = DodajPrzycisk("STOP (Null)", startY + 30, 150);
         b2.Click += (s, e) => PlaySound(null, IntPtr.Zero, 0); // Zatrzymanie przez NULL
 
-        // --- RZĄD 2: Nagłówek WAV ---
-        startY += 90;
-        DodajNapis("2. Nagłówek pliku WAV", startY);
-        lblWavInfo = new Label { Text = "Kliknij, aby sprawdzić info...", Top = startY + 30, Left = 20, Width = 400 };
-        this.Controls.Add(lblWavInfo);
+        // --- RZĄD 2: NAGŁÓWEK WAV (Pełny) ---
+        startY += 100;
+        DodajNapis("2. Pełny Nagłówek i Dane Pliku WAV", startY);
         
-        Button bInfo = DodajPrzycisk("Pokaż Info", startY + 55, 20);
-        bInfo.Click += (s, e) => PokazNaglowekWav();
+        txtHeaderInfo = new TextBox { 
+            Top = startY + 30, Left = 20, Width = 540, Height = 180, 
+            Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
+            Font = new Font("Consolas", 9) // Czcionka programistyczna - czytelniejsza
+        };
+        this.Controls.Add(txtHeaderInfo);
+
+        Button bInfo = DodajPrzycisk("Pobierz Pełne Info", startY + 220, 20);
+        bInfo.Width = 230;
+        bInfo.Click += (s, e) => PokazPelnyNaglowek();
 
         // --- RZĄD 3: ActiveX ---
-        startY += 110;
-        DodajNapis("3. ActiveX (Szybkość)", startY);
+        startY += 280;
+        DodajNapis("3. ActiveX (Media Player - Szybkość)", startY);
         Button b3 = DodajPrzycisk("Graj MP3", startY + 30, 20);
         b3.Click += (s, e) => { wmp.URL = mp3; wmp.controls.play(); };
-        
-        Button b4 = DodajPrzycisk("Szybko (2x)", startY + 30, 130);
+
+        Button b4 = DodajPrzycisk("Szybko 2.0x", startY + 30, 150);
         b4.Click += (s, e) => wmp.settings.rate = 2.0;
 
-        // --- RZĄD 4: NAudio (Pauza i Wznowienie) ---
-        startY += 90;
-        DodajNapis("4. NAudio (Start / Pauza / Resume)", startY);
+        // --- RZĄD 4: NAudio (Pauza/Wznowienie) ---
+        startY += 100;
+        DodajNapis("4. NAudio (Zapamiętywanie pozycji)", startY);
         
-        Button bStart = DodajPrzycisk("Start / Play", startY + 30, 20);
-        bStart.Click += (s, e) => {
-            // Jeśli czytnik nie istnieje, stwórz go
+        Button bPlay = DodajPrzycisk("START / WZNÓW", startY + 30, 20);
+        bPlay.Click += (s, e) => {
             if (audioReader == null) {
                 audioReader = new AudioFileReader(mp3);
                 waveOut.Init(audioReader);
             }
-            waveOut.Play(); // Play działa też jako Resume po pauzie
+            waveOut.Play(); // Jeśli było zapauzowane, ruszy od tego samego momentu
         };
 
-        Button bPause = DodajPrzycisk("Pauza", startY + 30, 130);
-        bPause.Click += (s, e) => waveOut.Pause(); // Zatrzymuje, ale pamięta pozycję
+        Button bPause = DodajPrzycisk("PAUZA", startY + 30, 150);
+        bPause.Click += (s, e) => waveOut.Pause(); // Stopuje, ale nie kasuje pozycji
 
-        Button bReset = DodajPrzycisk("Reset", startY + 30, 240);
+        Button bReset = DodajPrzycisk("RESTART", startY + 30, 280);
         bReset.Click += (s, e) => {
             waveOut.Stop();
-            if (audioReader != null) audioReader.Position = 0; // Przewija na początek
+            if (audioReader != null) audioReader.Position = 0; // Przewiń na start
         };
     }
 
-    private void PokazNaglowekWav()
+    private void PokazPelnyNaglowek()
     {
         try {
-            // Używamy NAudio do podejrzenia parametrów pliku
             using (var reader = new WaveFileReader(wav)) {
                 var f = reader.WaveFormat;
-                lblWavInfo.Text = $"Format: {f.Encoding} | {f.SampleRate}Hz | {f.BitsPerSample}bit | Kanały: {f.Channels}";
-                lblWavInfo.ForeColor = Color.Blue;
+                var info = new System.Text.StringBuilder();
+                info.AppendLine($"--- NAGŁÓWEK GŁÓWNY (fmt) ---");
+                info.AppendLine($"Kodowanie: {f.Encoding}");
+                info.AppendLine($"Kanały: {f.Channels}");
+                info.AppendLine($"Próbkowanie: {f.SampleRate} Hz");
+                info.AppendLine($"Bity na próbkę: {f.BitsPerSample} bit");
+                info.AppendLine($"Bajtów na sekundę: {f.AverageBytesPerSecond}");
+                info.AppendLine($"Wyrównanie bloku: {f.BlockAlign}");
+                info.AppendLine("");
+                info.AppendLine($"--- DANE PLIKU ---");
+                info.AppendLine($"Czas trwania: {reader.TotalTime}");
+                info.AppendLine($"Długość w bajtach: {reader.Length} bytes");
+                
+                // Dodatkowe metadane (Extra Chunks) jeśli istnieją
+                if (reader.ExtraChunks.Count > 0) {
+                    info.AppendLine("");
+                    info.AppendLine($"--- DODATKOWE SEKCJE (Chunks) ---");
+                    foreach(var chunk in reader.ExtraChunks)
+                        info.AppendLine($"Chunk ID: {chunk.IdentifierAsString} | Rozmiar: {chunk.ChunkLength}");
+                }
+
+                txtHeaderInfo.Text = info.ToString();
             }
-        } catch (Exception ex) {
-            lblWavInfo.Text = "Błąd: Nie znaleziono pliku test.wav";
-            lblWavInfo.ForeColor = Color.Red;
+        } catch {
+            txtHeaderInfo.Text = "BŁĄD: Nie można odczytać pliku test.wav.\nUpewnij się, że plik jest w folderze projektu.";
         }
     }
 
+    // Pomocnik: Przycisk z wysokością minimum 40
     private Button DodajPrzycisk(string tekst, int gora, int lewo) {
-        Button b = new Button { Text = tekst, Top = gora, Left = lewo, Width = 100, Height = 35 };
+        Button b = new Button { 
+            Text = tekst, Top = gora, Left = lewo, 
+            Width = 120, Height = 45, // Zwiększona wysokość
+            BackColor = Color.LightGray,
+            FlatStyle = FlatStyle.Flat
+        };
         this.Controls.Add(b);
         return b;
     }
 
     private void DodajNapis(string tekst, int gora) {
-        Label l = new Label { Text = tekst, Top = gora, Left = 20, AutoSize = true, Font = new Font("Arial", 9, FontStyle.Bold) };
+        Label l = new Label { Text = tekst, Top = gora, Left = 20, AutoSize = true, Font = new Font("Segoe UI", 10, FontStyle.Bold) };
         this.Controls.Add(l);
     }
 }
