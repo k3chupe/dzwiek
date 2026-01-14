@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text; // POTRZEBNE do StringBuilder
 using NAudio.Wave;
+using NAudio.CoreAudioApi; // To pozwala sterować głośnikami systemu
 
 namespace AudioProApp;
 
@@ -89,6 +90,24 @@ public partial class Form1 : Form
             waveOut.Stop();
             if (audioReader != null) audioReader.Position = 0;
         };
+
+        // 1. Stwórz suwak
+        TrackBar systemSlider = new TrackBar { 
+            Top = 600, Left = 20, Width = 400, 
+            Minimum = 0, Maximum = 100 
+        };
+        
+        // 2. Pobierz aktualną głośność systemu na start, żeby suwak był w dobrym miejscu
+        var enumerator = new MMDeviceEnumerator();
+        var currentDevice = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+        systemSlider.Value = (int)(currentDevice.AudioEndpointVolume.MasterVolumeLevelScalar * 100);
+        
+        // 3. Podepnij działanie pod ruch suwaka
+        systemSlider.Scroll += (s, e) => {
+            UstawGlosnoscSystemu(systemSlider.Value);
+        };
+        
+        this.Controls.Add(systemSlider);
     }
 
     private void PokazPelnyNaglowek()
@@ -119,6 +138,14 @@ public partial class Form1 : Form
         } catch (Exception ex) {
             txtHeaderInfo.Text = "Błąd odczytu: " + ex.Message;
         }
+    }
+
+    private void UstawGlosnoscSystemu(int poziom)
+    {
+        var enumerator = new MMDeviceEnumerator();
+        var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+        // Skala 0.0 do 1.0, więc dzielimy suwak (0-100) przez 100
+        device.AudioEndpointVolume.MasterVolumeLevelScalar = poziom / 100f;
     }
 
     private Button DodajPrzycisk(string tekst, int gora, int lewo) {
